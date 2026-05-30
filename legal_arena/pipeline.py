@@ -122,6 +122,8 @@ async def run_debate(
     enable_early_convergence: bool = True,
     parallel_opening_round: bool = True,
     raindrop_enabled: bool | None = None,
+    trace_status: dict[str, object] | None = None,
+    run_artifacts: dict[str, object] | None = None,
 ) -> FinalAssessment:
     _debug_log(
         f"run_debate start rounds={n_rounds} parallel_opening_round={parallel_opening_round} "
@@ -144,6 +146,8 @@ async def run_debate(
             "modal_enabled": bool(modal_config.enabled) if modal_config else False,
         },
     )
+    if trace_status is not None:
+        trace_status.update(tracer.status())
     source_pool = SubAgentPool(documents, modal_config=modal_config)
     conversation: list[ConversationEntry] = [
         ConversationEntry(role="case", round_number=0, content=case.model_dump_json())
@@ -182,6 +186,15 @@ async def run_debate(
     final_prosecution_argument: DebateArgument | None = None
     final_defense_argument: DebateArgument | None = None
     latest_judgments: dict[Side, TurnJudgment] = {}
+    if run_artifacts is not None:
+        run_artifacts.update(
+            {
+                "case": case.model_dump(mode="json"),
+                "turns": [],
+                "completed_rounds": 0,
+                "early_stopped": False,
+            }
+        )
 
     for round_num in range(1, n_rounds + 1):
         _debug_log(f"round={round_num} start")
@@ -201,6 +214,44 @@ async def run_debate(
                 output_payload={
                     "prosecution": final_prosecution_argument.model_dump(mode="json"),
                     "defense": final_defense_argument.model_dump(mode="json"),
+                },
+            )
+            tracer.track_tool(
+                name="prosecution_turn",
+                started=started,
+                input_payload={"round_number": round_num, "mode": "parallel_opening"},
+                output_payload=final_prosecution_argument,
+                properties={"side": "prosecution", "parallel_opening": True},
+            )
+            tracer.track_ai_event(
+                event="prosecution_turn",
+                input_payload={"round_number": round_num, "conversation": [entry.model_dump(mode="json") for entry in conversation]},
+                output_payload=final_prosecution_argument.argument,
+                properties={
+                    "side": "prosecution",
+                    "round_number": round_num,
+                    "parallel_opening": True,
+                    "key_points": final_prosecution_argument.key_points,
+                    "weaknesses_acknowledged": final_prosecution_argument.weaknesses_acknowledged,
+                },
+            )
+            tracer.track_tool(
+                name="defense_turn",
+                started=started,
+                input_payload={"round_number": round_num, "mode": "parallel_opening"},
+                output_payload=final_defense_argument,
+                properties={"side": "defense", "parallel_opening": True},
+            )
+            tracer.track_ai_event(
+                event="defense_turn",
+                input_payload={"round_number": round_num, "conversation": [entry.model_dump(mode="json") for entry in conversation]},
+                output_payload=final_defense_argument.argument,
+                properties={
+                    "side": "defense",
+                    "round_number": round_num,
+                    "parallel_opening": True,
+                    "key_points": final_defense_argument.key_points,
+                    "weaknesses_acknowledged": final_defense_argument.weaknesses_acknowledged,
                 },
             )
             conversation.extend(
@@ -224,6 +275,24 @@ async def run_debate(
                     run_turn_judge(case=case, conversation=conversation, argument=final_defense_argument),
                 ),
             )
+            _record_turn_artifact(
+                run_artifacts,
+                round_num=round_num,
+                mode="parallel_opening",
+                prosecution_argument=final_prosecution_argument,
+                defense_argument=final_defense_argument,
+                prosecution_judgment=prosecution_judgment,
+                defense_judgment=defense_judgment,
+            )
+            _attach_turn_blocks(
+                tracer,
+                round_num=round_num,
+                mode="parallel_opening",
+                prosecution_argument=final_prosecution_argument,
+                defense_argument=final_defense_argument,
+                prosecution_judgment=prosecution_judgment,
+                defense_judgment=defense_judgment,
+            )
             tracer.track_tool(
                 name="parallel_opening_judgments",
                 started=started,
@@ -231,6 +300,42 @@ async def run_debate(
                 output_payload={
                     "prosecution_score": prosecution_judgment.total_score,
                     "defense_score": defense_judgment.total_score,
+                },
+            )
+            tracer.track_tool(
+                name="judge_prosecution_turn",
+                started=started,
+                input_payload=final_prosecution_argument,
+                output_payload=prosecution_judgment,
+                properties={"side": "prosecution", "parallel_opening": True},
+            )
+            tracer.track_ai_event(
+                event="judge_prosecution_turn",
+                input_payload=final_prosecution_argument.argument,
+                output_payload=prosecution_judgment.rationale,
+                properties={
+                    "side": "prosecution",
+                    "round_number": round_num,
+                    "score": prosecution_judgment.total_score,
+                    "rubric": prosecution_judgment.scores.model_dump(mode="json"),
+                },
+            )
+            tracer.track_tool(
+                name="judge_defense_turn",
+                started=started,
+                input_payload=final_defense_argument,
+                output_payload=defense_judgment,
+                properties={"side": "defense", "parallel_opening": True},
+            )
+            tracer.track_ai_event(
+                event="judge_defense_turn",
+                input_payload=final_defense_argument.argument,
+                output_payload=defense_judgment.rationale,
+                properties={
+                    "side": "defense",
+                    "round_number": round_num,
+                    "score": defense_judgment.total_score,
+                    "rubric": defense_judgment.scores.model_dump(mode="json"),
                 },
             )
             latest_judgments["prosecution"] = prosecution_judgment
@@ -261,6 +366,17 @@ async def run_debate(
                 input_payload={"round_number": round_num},
                 output_payload=final_prosecution_argument,
             )
+            tracer.track_ai_event(
+                event="prosecution_turn",
+                input_payload={"round_number": round_num, "conversation": [entry.model_dump(mode="json") for entry in conversation]},
+                output_payload=final_prosecution_argument.argument,
+                properties={
+                    "side": "prosecution",
+                    "round_number": round_num,
+                    "key_points": final_prosecution_argument.key_points,
+                    "weaknesses_acknowledged": final_prosecution_argument.weaknesses_acknowledged,
+                },
+            )
             conversation.append(
                 ConversationEntry(
                     role="prosecution",
@@ -278,6 +394,17 @@ async def run_debate(
                 started=started,
                 input_payload=final_prosecution_argument,
                 output_payload=prosecution_judgment,
+            )
+            tracer.track_ai_event(
+                event="judge_prosecution_turn",
+                input_payload=final_prosecution_argument.argument,
+                output_payload=prosecution_judgment.rationale,
+                properties={
+                    "side": "prosecution",
+                    "round_number": round_num,
+                    "score": prosecution_judgment.total_score,
+                    "rubric": prosecution_judgment.scores.model_dump(mode="json"),
+                },
             )
             latest_judgments["prosecution"] = prosecution_judgment
             conversation.append(
@@ -299,6 +426,17 @@ async def run_debate(
                 input_payload={"round_number": round_num},
                 output_payload=final_defense_argument,
             )
+            tracer.track_ai_event(
+                event="defense_turn",
+                input_payload={"round_number": round_num, "conversation": [entry.model_dump(mode="json") for entry in conversation]},
+                output_payload=final_defense_argument.argument,
+                properties={
+                    "side": "defense",
+                    "round_number": round_num,
+                    "key_points": final_defense_argument.key_points,
+                    "weaknesses_acknowledged": final_defense_argument.weaknesses_acknowledged,
+                },
+            )
             conversation.append(
                 ConversationEntry(
                     role="defense",
@@ -311,11 +449,40 @@ async def run_debate(
                 f"round_{round_num}.defense_judgment",
                 run_turn_judge(case=case, conversation=conversation, argument=final_defense_argument),
             )
+            _record_turn_artifact(
+                run_artifacts,
+                round_num=round_num,
+                mode="sequential_rebuttal",
+                prosecution_argument=final_prosecution_argument,
+                defense_argument=final_defense_argument,
+                prosecution_judgment=prosecution_judgment,
+                defense_judgment=defense_judgment,
+            )
+            _attach_turn_blocks(
+                tracer,
+                round_num=round_num,
+                mode="sequential_rebuttal",
+                prosecution_argument=final_prosecution_argument,
+                defense_argument=final_defense_argument,
+                prosecution_judgment=prosecution_judgment,
+                defense_judgment=defense_judgment,
+            )
             tracer.track_tool(
                 name="judge_defense_turn",
                 started=started,
                 input_payload=final_defense_argument,
                 output_payload=defense_judgment,
+            )
+            tracer.track_ai_event(
+                event="judge_defense_turn",
+                input_payload=final_defense_argument.argument,
+                output_payload=defense_judgment.rationale,
+                properties={
+                    "side": "defense",
+                    "round_number": round_num,
+                    "score": defense_judgment.total_score,
+                    "rubric": defense_judgment.scores.model_dump(mode="json"),
+                },
             )
             latest_judgments["defense"] = defense_judgment
             conversation.append(
@@ -331,6 +498,9 @@ async def run_debate(
             optimise_for=case.optimise_for,
             latest_judgments=latest_judgments,
         ):
+            if run_artifacts is not None:
+                run_artifacts["early_stopped"] = True
+                run_artifacts["early_stop_round"] = round_num
             break
         if round_num < n_rounds:
             started = time.perf_counter()
@@ -347,6 +517,9 @@ async def run_debate(
 
     if final_prosecution_argument is None or final_defense_argument is None:
         raise ValueError("At least one debate round is required.")
+    if run_artifacts is not None:
+        run_artifacts["completed_rounds"] = final_defense_argument.round_number
+        run_artifacts["conversation"] = [entry.model_dump(mode="json") for entry in conversation]
 
     started = time.perf_counter()
     assessment = await _await_stage(
@@ -359,12 +532,248 @@ async def run_debate(
         input_payload={"conversation_entries": len(conversation)},
         output_payload=assessment,
     )
-    tracer.finish(
-        output_payload=assessment,
-        properties={"completed_rounds": final_defense_argument.round_number},
+    tracer.track_ai_event(
+        event="final_assessment",
+        input_payload=[entry.model_dump(mode="json") for entry in conversation],
+        output_payload=assessment.risk_rationale,
+        properties={
+            "risk_score": assessment.risk_score,
+            "recommendation": assessment.settle_recommendation,
+            "optimised_for": assessment.optimised_for,
+        },
     )
+    tracer.add_attachment(
+        name="final-assessment",
+        value=_final_assessment_markdown(assessment),
+    )
+    tracer.finish(
+        output_payload={
+            "final_assessment": assessment.model_dump(mode="json"),
+            "debate_transcript": run_artifacts.get("turns", []) if run_artifacts is not None else [],
+        },
+        properties={
+            "completed_rounds": final_defense_argument.round_number,
+            "early_stopped": bool(run_artifacts.get("early_stopped")) if run_artifacts is not None else False,
+        },
+    )
+    if trace_status is not None:
+        trace_status.update(tracer.status())
     tracer.shutdown()
     return assessment
+
+
+def _record_turn_artifact(
+    run_artifacts: dict[str, object] | None,
+    *,
+    round_num: int,
+    mode: str,
+    prosecution_argument: DebateArgument,
+    defense_argument: DebateArgument,
+    prosecution_judgment: TurnJudgment,
+    defense_judgment: TurnJudgment,
+) -> None:
+    if run_artifacts is None:
+        return
+    turns = run_artifacts.get("turns")
+    if not isinstance(turns, list):
+        turns = []
+        run_artifacts["turns"] = turns
+    turns.append(
+        {
+            "round_number": round_num,
+            "mode": mode,
+            "prosecution": {
+                "argument": prosecution_argument.model_dump(mode="json"),
+                "judgment": prosecution_judgment.model_dump(mode="json"),
+            },
+            "defense": {
+                "argument": defense_argument.model_dump(mode="json"),
+                "judgment": defense_judgment.model_dump(mode="json"),
+            },
+            "score_margin_for_defense": defense_judgment.total_score - prosecution_judgment.total_score,
+            "score_margin_for_prosecution": prosecution_judgment.total_score - defense_judgment.total_score,
+        }
+    )
+
+
+def _turn_transcript_markdown(
+    *,
+    round_num: int,
+    mode: str,
+    prosecution_argument: DebateArgument,
+    defense_argument: DebateArgument,
+    prosecution_judgment: TurnJudgment,
+    defense_judgment: TurnJudgment,
+) -> str:
+    return "\n\n".join(
+        [
+            f"# Round {round_num} ({mode})",
+            "## Prosecution Argument",
+            prosecution_argument.argument,
+            "### Prosecution Key Points",
+            "\n".join(f"- {point}" for point in prosecution_argument.key_points),
+            "### Prosecution Judge Score",
+            f"{prosecution_judgment.total_score}/100\n\n{prosecution_judgment.rationale}",
+            "## Defense Argument",
+            defense_argument.argument,
+            "### Defense Key Points",
+            "\n".join(f"- {point}" for point in defense_argument.key_points),
+            "### Defense Judge Score",
+            f"{defense_judgment.total_score}/100\n\n{defense_judgment.rationale}",
+        ]
+    )
+
+
+def _attach_turn_blocks(
+    tracer: RaindropTracer,
+    *,
+    round_num: int,
+    mode: str,
+    prosecution_argument: DebateArgument,
+    defense_argument: DebateArgument,
+    prosecution_judgment: TurnJudgment,
+    defense_judgment: TurnJudgment,
+) -> None:
+    tracer.add_attachment(
+        name=f"round-{round_num}-source-synthesis-prosecution",
+        value=_sources_markdown(
+            title=f"Round {round_num} Prosecution Source Synthesis ({mode})",
+            argument=prosecution_argument,
+        ),
+    )
+    tracer.add_attachment(
+        name=f"round-{round_num}-prosecution-argument",
+        value=_argument_markdown(
+            title=f"Round {round_num} Prosecution Argument ({mode})",
+            argument=prosecution_argument,
+        ),
+    )
+    tracer.add_attachment(
+        name=f"round-{round_num}-judge-prosecution",
+        value=_judgment_markdown(
+            title=f"Round {round_num} Judge: Prosecution ({mode})",
+            judgment=prosecution_judgment,
+        ),
+    )
+    tracer.add_attachment(
+        name=f"round-{round_num}-source-synthesis-defense",
+        value=_sources_markdown(
+            title=f"Round {round_num} Defense Source Synthesis ({mode})",
+            argument=defense_argument,
+        ),
+    )
+    tracer.add_attachment(
+        name=f"round-{round_num}-defense-argument",
+        value=_argument_markdown(
+            title=f"Round {round_num} Defense Argument ({mode})",
+            argument=defense_argument,
+        ),
+    )
+    tracer.add_attachment(
+        name=f"round-{round_num}-judge-defense",
+        value=_judgment_markdown(
+            title=f"Round {round_num} Judge: Defense ({mode})",
+            judgment=defense_judgment,
+        ),
+    )
+
+
+def _sources_markdown(*, title: str, argument: DebateArgument) -> str:
+    sources = argument.sources_fetched
+    if sources is None:
+        return f"# {title}\n\nNo sources fetched."
+    return "\n\n".join(
+        [
+            f"# {title}",
+            "## Relevant Excerpts",
+            sources.relevant_excerpts,
+            "## Strong Evidence For Optimized Side",
+            _bullet_list(sources.strong_evidence_for_optimised_side),
+            "## Strong Arguments For Optimized Side",
+            _bullet_list(sources.strong_arguments_for_optimised_side),
+            "## Weak Points For Opposing Side",
+            _bullet_list(sources.weak_points_for_opposing_side),
+            "## Weak Points For Optimized Side",
+            _bullet_list(sources.weak_points_for_optimised_side),
+            "## Citations",
+            _bullet_list(sources.citations),
+            "## Gaps",
+            _bullet_list(sources.gaps),
+        ]
+    )
+
+
+def _argument_markdown(*, title: str, argument: DebateArgument) -> str:
+    return "\n\n".join(
+        [
+            f"# {title}",
+            "## Argument",
+            argument.argument,
+            "## Key Points",
+            _bullet_list(argument.key_points),
+            "## Weaknesses Acknowledged",
+            _bullet_list(argument.weaknesses_acknowledged),
+        ]
+    )
+
+
+def _judgment_markdown(*, title: str, judgment: TurnJudgment) -> str:
+    scores = judgment.scores
+    return "\n\n".join(
+        [
+            f"# {title}",
+            f"Total score: {judgment.total_score}/100",
+            "## Rubric",
+            "\n".join(
+                [
+                    f"- Validity of argument: {scores.validity_of_argument}/20",
+                    f"- Groundedness in evidence: {scores.groundedness_in_evidence}/20",
+                    f"- Counter-attack/defense: {scores.counter_attack_or_defense}/20",
+                    f"- Legal specificity: {scores.legal_specificity}/20",
+                    f"- Strategic strength: {scores.strategic_strength}/20",
+                ]
+            ),
+            "## Strongest Points",
+            _bullet_list(judgment.strongest_points),
+            "## Weak Points",
+            _bullet_list(judgment.weak_points),
+            "## Counter Opportunities",
+            _bullet_list(judgment.counter_opportunities),
+            "## Rationale",
+            judgment.rationale,
+        ]
+    )
+
+
+def _final_assessment_markdown(assessment: FinalAssessment) -> str:
+    return "\n\n".join(
+        [
+            "# Final Assessment",
+            f"Optimised for: {assessment.optimised_for}",
+            f"Risk score: {assessment.risk_score}/10",
+            f"Recommendation: {assessment.settle_recommendation}",
+            "## Strongest Arguments",
+            _bullet_list(assessment.strongest_arguments),
+            "## Vulnerabilities",
+            _bullet_list(assessment.vulnerabilities),
+            "## Precedents To Cite",
+            _bullet_list(assessment.precedents_to_cite),
+            "## Risk Rationale",
+            assessment.risk_rationale,
+            "## Settlement Rationale",
+            assessment.settle_rationale,
+            "## Suggested Settlement Terms",
+            _bullet_list(assessment.suggested_settlement_terms or []),
+            "## Evidence Gaps",
+            _bullet_list(assessment.evidence_gaps),
+        ]
+    )
+
+
+def _bullet_list(items: list[str]) -> str:
+    if not items:
+        return "- None"
+    return "\n".join(f"- {item}" for item in items)
 
 
 def summarise_argument(argument: DebateArgument) -> str:

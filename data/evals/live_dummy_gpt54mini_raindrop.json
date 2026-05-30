@@ -1,0 +1,47 @@
+{
+  "config": {
+    "model": "gpt-5.4-mini",
+    "n_rounds": 2,
+    "use_modal": true,
+    "modal_gpu": null,
+    "case_count_requested": 1,
+    "parallel_opening_round": true,
+    "raindrop_enabled": true
+  },
+  "seconds": 105.85,
+  "cases": [
+    {
+      "case_id": "tenant-lockout-ca",
+      "title": "Tenant Lockout After Repair Dispute",
+      "status": "ok",
+      "seconds": 105.85,
+      "risk_score": 2,
+      "recommendation": "negotiate",
+      "strongest_arguments": [
+        "California strongly disfavors landlord self-help; changing the locks while the tenant\u2019s property remained inside is classic wrongful eviction exposure, and the landlord\u2019s remedy was unlawful detainer, not lockout.",
+        "The record supports non-abandonment: furniture, medication, and work equipment remained in the unit at the time of the lock change, which is powerful objective evidence that possession had not been surrendered.",
+        "Habitability complaints were contemporaneous and documented in writing, with mold and heat outages reported and repairs deferred, supporting a Green/Knight rent-defense or at least an offset and undermining a simple unpaid-rent narrative."
+      ],
+      "vulnerabilities": [
+        "The record does not quantify the rent abatement or prove that the defects justified full withholding, leaving exposure for some unpaid rent and breach damages.",
+        "There is no complete timeline showing whether the tenant had otherwise vacated, surrendered keys, or taken actions consistent with abandonment, so the landlord can still press that theory.",
+        "The defense lacks a full lease, rent ledger, and formal repair-and-deduct/notice record, which weakens the precision of the habitability and damages defenses."
+      ],
+      "evidence_gaps": [
+        "Exact date and method of the lock change.",
+        "Whether any unlawful detainer notice or court filing occurred before the lockout.",
+        "Severity and duration of mold and heat defects.",
+        "Whether the tenant made partial payments or formally invoked any statutory repair remedy.",
+        "Lease language governing default, abandonment, and landlord entry.",
+        "Any proof the tenant surrendered keys, changed mailing address, or moved most belongings before lockout."
+      ],
+      "trace_status": {
+        "enabled": true,
+        "run_id": "legal-arena-79cbbf83-cc3f-4f39-84f5-ad31a8c95747",
+        "init_error": null,
+        "local_debugger": "http://localhost:5899/v1/",
+        "write_key_configured": false
+      }
+    }
+  ]
+}
