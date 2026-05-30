@@ -54,6 +54,8 @@ async def run_live_dummy_cases(
 
     for dummy_case in selected_cases:
         started_case = time.perf_counter()
+        trace_status: dict[str, object] = {}
+        run_artifacts: dict[str, object] = {}
         try:
             assessment = await run_debate(
                 dummy_case.case,
@@ -62,6 +64,8 @@ async def run_live_dummy_cases(
                 modal_config=modal_config,
                 parallel_opening_round=parallel_opening_round,
                 raindrop_enabled=raindrop_enabled,
+                trace_status=trace_status,
+                run_artifacts=run_artifacts,
             )
             reports.append(
                 {
@@ -74,6 +78,8 @@ async def run_live_dummy_cases(
                     "strongest_arguments": assessment.strongest_arguments,
                     "vulnerabilities": assessment.vulnerabilities,
                     "evidence_gaps": assessment.evidence_gaps,
+                    "trace_status": trace_status,
+                    "run_artifacts": run_artifacts,
                 }
             )
         except Exception as exc:
@@ -84,6 +90,8 @@ async def run_live_dummy_cases(
                     "status": "error",
                     "seconds": round(time.perf_counter() - started_case, 2),
                     "error": str(exc),
+                    "trace_status": trace_status,
+                    "run_artifacts": run_artifacts,
                 }
             )
             break

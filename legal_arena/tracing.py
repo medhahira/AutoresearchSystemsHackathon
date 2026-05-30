@@ -22,6 +22,19 @@ class RaindropTracer:
     sdk: Any = None
     run_id: str | None = None
     init_error: str | None = None
+    event_count: int = 0
+    attachment_count: int = 0
+
+    def status(self) -> dict[str, Any]:
+        return {
+            "enabled": self.enabled,
+            "run_id": self.run_id,
+            "init_error": self.init_error,
+            "local_debugger": os.getenv("RAINDROP_LOCAL_DEBUGGER"),
+            "write_key_configured": bool(os.getenv("RAINDROP_WRITE_KEY")),
+            "event_count": self.event_count,
+            "attachment_count": self.attachment_count,
+        }
 
     @classmethod
     def start(
@@ -81,6 +94,57 @@ class RaindropTracer:
             if error is not None:
                 kwargs["error"] = error
             self.interaction.track_tool(**kwargs)
+        except Exception:
+            return
+
+    def add_attachment(
+        self,
+        *,
+        name: str,
+        value: Any,
+        role: str = "output",
+        attachment_type: str = "text",
+    ) -> None:
+        if not self.enabled or self.interaction is None:
+            return
+        try:
+            self.interaction.add_attachments(
+                [
+                    {
+                        "type": attachment_type,
+                        "name": name,
+                        "value": _safe_payload(value),
+                        "role": role,
+                    }
+                ]
+            )
+            self.attachment_count += 1
+        except Exception:
+            return
+
+    def track_ai_event(
+        self,
+        *,
+        event: str,
+        input_payload: Any | None = None,
+        output_payload: Any | None = None,
+        properties: dict[str, Any] | None = None,
+        attachments: list[dict[str, Any]] | None = None,
+    ) -> None:
+        if not self.enabled or self.sdk is None:
+            return
+        try:
+            self.sdk.track_ai(
+                user_id=os.getenv("LEGAL_ARENA_TRACE_USER", "local-user"),
+                event=event,
+                model=os.getenv("LEGAL_ARENA_MODEL"),
+                input=_safe_payload(input_payload),
+                output=_safe_payload(output_payload),
+                convo_id=self.run_id,
+                properties=properties or {},
+                attachments=attachments or [],
+            )
+            self.event_count += 1
         except Exception:
             return
 

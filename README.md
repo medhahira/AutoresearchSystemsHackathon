@@ -159,6 +159,7 @@ Raindrop Workshop can stream local traces for debugging agent behavior.
 
 ```bash
 curl -fsSL https://raindrop.sh/install | bash
+pip install raindrop-ai
 raindrop workshop setup
 ```
 
@@ -168,6 +169,13 @@ shell path:
 ```bash
 export PATH="$HOME/.raindrop/bin:$PATH"
 raindrop workshop setup
+```
+
+`raindrop workshop setup` prints a local debugger URL. Export it in the same
+terminal where you run Legal Arena:
+
+```bash
+export RAINDROP_LOCAL_DEBUGGER="http://localhost:5899/v1/"
 ```
 
 To make that persistent for new terminals:
@@ -197,6 +205,16 @@ python -m legal_arena.evals.live_runner \
 The tracing layer records source fetches, debate turns, judge scoring,
 conversation condensation, and final assessment. OpenAI SDK calls are also
 auto-instrumented when Raindrop tracing is active.
+
+Legal Arena sends both tool spans and AI interaction events. Tool spans show the
+execution timeline; AI events show the prosecution, defense, judge, and final
+assessment text in Workshop's conversation-oriented views.
+
+Each completed round is attached to the root Raindrop interaction as separate
+text attachments: source synthesis, prosecution argument, judge-prosecution,
+defense source synthesis, defense argument, and judge-defense. The final root
+output also includes the full debate transcript. If Workshop only shows the root
+input/output, inspect the attachments or raw output for the turn-by-turn blocks.
 
 ## Browser UI
 

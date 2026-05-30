@@ -66,6 +66,7 @@ async def main(
         modal_config=modal_config,
         parallel_opening_round=parallel_opening_round,
         raindrop_enabled=raindrop_enabled,
+        trace_status={},
     )
 
     print("\n=== Final Assessment ===")
