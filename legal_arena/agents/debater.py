@@ -27,17 +27,22 @@ class Debater:
     def _default_queries(self, round_number: int) -> list[SourceFetchRequest]:
         side_goals = self.case.prosecution_must_prove if self.side == "prosecution" else self.case.defense_must_prove
         jurisdiction = ", ".join(self.case.relevant_jurisdictions) or "controlling jurisdiction"
-        base = f"{self.case.title}: {self.case.summary}"
-        goals = "; ".join(side_goals[:4])
+        base = self.case.title.strip()
+        summary_terms = " ".join(self.case.summary.split()[:20])
+        goals = "; ".join(goal.strip() for goal in side_goals[:2])
+        case_law_query = " ".join(
+            part for part in [jurisdiction, "case law", base, summary_terms, goals] if part
+        )[:220]
+        uploaded_docs_query = " ".join(part for part in [base, summary_terms, goals] if part)
         return [
             SourceFetchRequest(
                 source_type="case_law",
-                query=f"{jurisdiction} case law {base} {goals}",
+                query=case_law_query,
                 context=f"Round {round_number} {self.side} argument needs controlling precedent.",
             ),
             SourceFetchRequest(
                 source_type="uploaded_docs",
-                query=f"{base} {goals}",
+                query=uploaded_docs_query,
                 context=f"Round {round_number} {self.side} argument needs facts from uploaded records.",
             ),
         ]

@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 import asyncio
+import os
 import time
+from collections.abc import Awaitable
+from typing import TypeVar
 
 from legal_arena.agents.debater import make_debater
 from legal_arena.agents.final_assessor import run_final_assessor
@@ -19,6 +22,43 @@ MAX_N_ROUNDS = 10
 EARLY_CONVERGENCE_MIN_ROUNDS = 2
 EARLY_STOP_SCORE_THRESHOLD = 85
 EARLY_STOP_SCORE_MARGIN = 15
+DEFAULT_STAGE_TIMEOUT_S = 180
+
+_StageT = TypeVar("_StageT")
+
+
+def _debug_enabled() -> bool:
+    return os.getenv("LEGAL_ARENA_DEBUG", "0").lower() in {"1", "true", "yes"}
+
+
+def _stage_timeout_s() -> int:
+    raw = os.getenv("LEGAL_ARENA_STAGE_TIMEOUT_S", str(DEFAULT_STAGE_TIMEOUT_S))
+    try:
+        return max(0, int(raw))
+    except ValueError:
+        return DEFAULT_STAGE_TIMEOUT_S
+
+
+def _debug_log(message: str) -> None:
+    if _debug_enabled():
+        print(f"[legal_arena.debug] {message}")
+
+
+async def _await_stage(label: str, awaitable: Awaitable[_StageT]) -> _StageT:
+    timeout_s = _stage_timeout_s()
+    started = time.perf_counter()
+    _debug_log(f"start:{label} timeout_s={timeout_s}")
+    try:
+        if timeout_s > 0:
+            result = await asyncio.wait_for(awaitable, timeout=timeout_s)
+        else:
+            result = await awaitable
+        return result
+    except asyncio.TimeoutError as exc:
+        raise RuntimeError(f"Stage '{label}' timed out after {timeout_s}s") from exc
+    finally:
+        elapsed = time.perf_counter() - started
+        _debug_log(f"end:{label} elapsed_s={elapsed:.2f}")
 
 
 class SubAgentPool:
@@ -83,6 +123,10 @@ async def run_debate(
     parallel_opening_round: bool = True,
     raindrop_enabled: bool | None = None,
 ) -> FinalAssessment:
+    _debug_log(
+        f"run_debate start rounds={n_rounds} parallel_opening_round={parallel_opening_round} "
+        f"early_convergence={enable_early_convergence}"
+    )
     if n_rounds < 1:
         raise ValueError("n_rounds must be at least 1.")
     if n_rounds > MAX_N_ROUNDS:
@@ -108,8 +152,14 @@ async def run_debate(
     async def fetch_sources(queries: list[SourceFetchRequest], question: str) -> SynthesizedSources:
         started = time.perf_counter()
         try:
-            source_results = await source_pool.run(queries)
-            synthesized = await synthesize_sources(source_results, question)
+            source_results = await _await_stage(
+                "source_pool.run",
+                source_pool.run(queries),
+            )
+            synthesized = await _await_stage(
+                "source_synthesizer",
+                synthesize_sources(source_results, question),
+            )
             tracer.track_tool(
                 name="fetch_sources",
                 started=started,
@@ -134,11 +184,15 @@ async def run_debate(
     latest_judgments: dict[Side, TurnJudgment] = {}
 
     for round_num in range(1, n_rounds + 1):
+        _debug_log(f"round={round_num} start")
         if round_num == 1 and parallel_opening_round:
             started = time.perf_counter()
-            final_prosecution_argument, final_defense_argument = await asyncio.gather(
-                prosecution.run(conversation=list(conversation), round_number=round_num),
-                defense.run(conversation=list(conversation), round_number=round_num),
+            final_prosecution_argument, final_defense_argument = await _await_stage(
+                f"round_{round_num}.parallel_opening_arguments",
+                asyncio.gather(
+                    prosecution.run(conversation=list(conversation), round_number=round_num),
+                    defense.run(conversation=list(conversation), round_number=round_num),
+                ),
             )
             tracer.track_tool(
                 name="parallel_opening_arguments",
@@ -163,9 +217,12 @@ async def run_debate(
                     ),
                 ]
             )
-            prosecution_judgment, defense_judgment = await asyncio.gather(
-                run_turn_judge(case=case, conversation=conversation, argument=final_prosecution_argument),
-                run_turn_judge(case=case, conversation=conversation, argument=final_defense_argument),
+            prosecution_judgment, defense_judgment = await _await_stage(
+                f"round_{round_num}.parallel_opening_judgments",
+                asyncio.gather(
+                    run_turn_judge(case=case, conversation=conversation, argument=final_prosecution_argument),
+                    run_turn_judge(case=case, conversation=conversation, argument=final_defense_argument),
+                ),
             )
             tracer.track_tool(
                 name="parallel_opening_judgments",
@@ -194,7 +251,10 @@ async def run_debate(
             )
         else:
             started = time.perf_counter()
-            final_prosecution_argument = await prosecution.run(conversation=conversation, round_number=round_num)
+            final_prosecution_argument = await _await_stage(
+                f"round_{round_num}.prosecution_argument",
+                prosecution.run(conversation=conversation, round_number=round_num),
+            )
             tracer.track_tool(
                 name="prosecution_turn",
                 started=started,
@@ -209,7 +269,10 @@ async def run_debate(
                 )
             )
             started = time.perf_counter()
-            prosecution_judgment = await run_turn_judge(case=case, conversation=conversation, argument=final_prosecution_argument)
+            prosecution_judgment = await _await_stage(
+                f"round_{round_num}.prosecution_judgment",
+                run_turn_judge(case=case, conversation=conversation, argument=final_prosecution_argument),
+            )
             tracer.track_tool(
                 name="judge_prosecution_turn",
                 started=started,
@@ -226,7 +289,10 @@ async def run_debate(
             )
 
             started = time.perf_counter()
-            final_defense_argument = await defense.run(conversation=conversation, round_number=round_num)
+            final_defense_argument = await _await_stage(
+                f"round_{round_num}.defense_argument",
+                defense.run(conversation=conversation, round_number=round_num),
+            )
             tracer.track_tool(
                 name="defense_turn",
                 started=started,
@@ -241,7 +307,10 @@ async def run_debate(
                 )
             )
             started = time.perf_counter()
-            defense_judgment = await run_turn_judge(case=case, conversation=conversation, argument=final_defense_argument)
+            defense_judgment = await _await_stage(
+                f"round_{round_num}.defense_judgment",
+                run_turn_judge(case=case, conversation=conversation, argument=final_defense_argument),
+            )
             tracer.track_tool(
                 name="judge_defense_turn",
                 started=started,
@@ -265,7 +334,10 @@ async def run_debate(
             break
         if round_num < n_rounds:
             started = time.perf_counter()
-            conversation = await condense_conversation(conversation)
+            conversation = await _await_stage(
+                f"round_{round_num}.condense_conversation",
+                condense_conversation(conversation),
+            )
             tracer.track_tool(
                 name="condense_conversation",
                 started=started,
@@ -277,7 +349,10 @@ async def run_debate(
         raise ValueError("At least one debate round is required.")
 
     started = time.perf_counter()
-    assessment = await run_final_assessor(case, conversation, final_prosecution_argument, final_defense_argument)
+    assessment = await _await_stage(
+        "final_assessment",
+        run_final_assessor(case, conversation, final_prosecution_argument, final_defense_argument),
+    )
     tracer.track_tool(
         name="final_assessment",
         started=started,

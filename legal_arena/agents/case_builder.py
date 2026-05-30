@@ -25,12 +25,32 @@ async def build_case(
     if not normalized_documents:
         normalized_documents = [Document.from_text("No uploaded documents provided.", 0, title="No Documents")]
 
-    case_input = CaseBuilderInput(
+    case_input = make_case_builder_input(
+        problem_statement,
+        normalized_documents,
+        jurisdiction=jurisdiction,
+        optimise_for=optimise_for,
+    )
+    _, user_prompt = make_case_builder_prompt(case_input)
+    return await structured_completion(output_type=CaseSchema, system_prompt=SYSTEM_PROMPT, user_prompt=user_prompt)
+
+
+def make_case_builder_input(
+    problem_statement: str,
+    documents: list[Document],
+    *,
+    jurisdiction: str | None = None,
+    optimise_for: str = "defense",
+) -> CaseBuilderInput:
+    return CaseBuilderInput(
         user_problem=problem_statement,
         incident_summary=problem_statement,
-        documents=normalized_documents,
+        documents=documents,
         jurisdiction=jurisdiction,
         constraints=[f"Optimize final strategy for {optimise_for}."] if optimise_for else [],
     )
+
+
+def make_case_builder_prompt(case_input: CaseBuilderInput) -> tuple[str, str]:
     user_prompt = f"Case builder input:\n{json_for_prompt(case_input)}"
-    return await structured_completion(output_type=CaseSchema, system_prompt=SYSTEM_PROMPT, user_prompt=user_prompt)
+    return SYSTEM_PROMPT, user_prompt

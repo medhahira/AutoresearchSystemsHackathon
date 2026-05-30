@@ -9,14 +9,6 @@ pip install modal
 python3 -m modal setup
 ```
 
-## Runtime Budget Policy
-
-- Run legal reasoning through the OpenAI API.
-- Use a mini model for iteration and reserve the strongest model for final showcase runs.
-- Use Modal primarily for orchestration and sandbox isolation.
-- GPU demo mode is limited to A10 only.
-- Do not use H100 or H100:8 for this project.
-
 ## Modal Checker
 
 Run the following command to verify Modal is set up correctly:
@@ -62,8 +54,6 @@ Run a multi-agent legal debate workflow that optimizes for one selected side (`d
 4. **Source Synthesizer Agent**
 	- Input: all retrieved source outputs + current conversation state.
 	- Output: condensed, relevant evidence package for the current turn.
-	- Highlights strong evidence and arguments for the optimized side, weak points
-	  in the opposing side, and weak points the optimized side must repair.
 
 5. **Prosecution Agent**
 	- Uses case context + synthesized evidence to produce argument for prosecution.
@@ -71,12 +61,7 @@ Run a multi-agent legal debate workflow that optimizes for one selected side (`d
 6. **Defense Agent**
 	- Uses case context + synthesized evidence to produce argument for defense.
 
-7. **Judge Agent**
-	- Scores every prosecution and defense turn out of 100.
-	- Uses a fixed rubric: argument validity, evidence groundedness,
-	  counter-attack/defense, legal specificity, and strategic strength.
-
-8. **Final Strategy Agent**
+7. **Final Strategy Agent**
 	- Optimizes final recommendation for `optimize_for` side from Case Builder output.
 	- Produces risk assessment and settlement recommendation.
 
@@ -90,18 +75,6 @@ Maintain a single append-only `conversation` object:
 
 ### Round Protocol (N rounds)
 
-Default `N` is 2 rounds. The configured hard maximum is 10 rounds.
-After each prosecution or defense turn, the Judge Agent scores the turn out of
-100 using the fixed rubric above. Early convergence is checked only after round 2
-and stops the debate when the optimized side scores at least 85/100 and leads the
-other side by at least 15 points.
-
-Round 1 uses independent async openings by default: prosecution and defense both
-prepare from the case record at the same time, and the judge scores both opening
-turns after they are appended. Later rounds are sequential so defense can respond
-to prosecution's latest attack. Use `--sequential-opening` to make round 1 follow
-the same prosecution-then-defense progression.
-
 For each round `r` in `1..N`:
 
 1. **Prosecution turn**
@@ -109,7 +82,6 @@ For each round `r` in `1..N`:
 	- Source Agents retrieve evidence.
 	- Source Synthesizer condenses evidence.
 	- Prosecution Agent generates argument.
-	- Judge Agent scores the prosecution turn.
 	- Append result to `conversation`.
 
 2. **Defense turn**
@@ -117,7 +89,6 @@ For each round `r` in `1..N`:
 	- Source Agents retrieve evidence.
 	- Source Synthesizer condenses evidence.
 	- Defense Agent generates argument.
-	- Judge Agent scores the defense turn.
 	- Append result to `conversation`.
 
 ### End Condition and Final Output
@@ -128,88 +99,6 @@ After `N` rounds, run Final Strategy Agent on full conversation and return:
 2. Risk assessment (strengths, weaknesses, uncertainty).
 3. Settlement guidance (whether to settle outside court and why).
 4. Suggested next actions and evidence gaps.
-
-## Offline Dummy Evaluation
-
-The repository includes five synthetic cases with mocked source packets. This
-benchmark does not call OpenAI or Modal; it validates schema fit, source coverage,
-theme coverage, citation coverage, risk-band sanity, and early-convergence behavior.
-Its dummy early-stop check uses the same judge-score threshold as the live pipeline.
-
-```bash
-python -m legal_arena.evals.evaluator --pretty
-```
-
-Add `--output data/evals/offline_dummy.json` to save the report.
-
-To run the same dummy cases through the live OpenAI/Modal pipeline:
-
-```bash
-export OPENAI_API_KEY="sk-..."
-python -m legal_arena.evals.live_runner --model gpt-5.4-mini --rounds 2 --pretty
-```
-
-Add `--output data/evals/live_dummy_gpt54mini.json` to save the live report.
-
-Add `--modal-gpu A10` only for the optional GPU demo path.
-
-## Raindrop Workshop Tracing
-
-Raindrop Workshop can stream local traces for debugging agent behavior.
-
-```bash
-curl -fsSL https://raindrop.sh/install | bash
-raindrop workshop setup
-```
-
-If `raindrop` is not found after installation, add its install directory to your
-shell path:
-
-```bash
-export PATH="$HOME/.raindrop/bin:$PATH"
-raindrop workshop setup
-```
-
-To make that persistent for new terminals:
-
-```bash
-echo 'export PATH="$HOME/.raindrop/bin:$PATH"' >> ~/.zshrc
-```
-
-You can also run it directly without changing `PATH`:
-
-```bash
-$HOME/.raindrop/bin/raindrop workshop setup
-```
-
-Then run Legal Arena with tracing enabled:
-
-```bash
-python -m legal_arena.evals.live_runner \
-	--model gpt-5.4-mini \
-	--rounds 2 \
-	--limit 1 \
-	--raindrop \
-	--pretty \
-	--output data/evals/live_dummy_gpt54mini.json
-```
-
-The tracing layer records source fetches, debate turns, judge scoring,
-conversation condensation, and final assessment. OpenAI SDK calls are also
-auto-instrumented when Raindrop tracing is active.
-
-## Browser UI
-
-Run a ChatGPT-style local UI with prompt input, file upload, toolbox output, and
-workflow traces:
-
-```bash
-source ~/anaconda3/etc/profile.d/conda.sh && conda activate modalhack && \
-	"$CONDA_PREFIX/bin/python" -m legal_arena.ui_server
-```
-
-Open `http://127.0.0.1:8000` in your browser. The UI accepts PDFs and text files,
-and can optionally use OpenAI file search before the case builder runs.
 
 ### Minimal Execution Graph
 
@@ -280,3 +169,129 @@ data/
 - `schemas/outputs/prosecution_output.schema.json`: Prosecution argument package (claims, argument, cited evidence, requested outcome).
 - `schemas/outputs/defense_output.schema.json`: Defense argument package (claims, argument, cited evidence, requested outcome).
 - `schemas/outputs/final_strategy_output.schema.json`: Side-optimized final strategy, risk assessment, settlement recommendation, next actions, and evidence gaps.
+
+## CourtListener Corpus Integration
+
+CourtListener is now wired as a source agent for case background retrieval and evidence support.
+
+### Files Added
+
+- `src/agents/source_agents/courtlistener_client.py`: API client + normalization to shared `evidenceSnippet` shape.
+- `src/agents/source_agents/courtlistener_source_agent.py`: Source-agent entry function that returns `source_agent_output`-compatible payloads.
+- `src/agents/source_agents/run_courtlistener_agent.py`: CLI runner for quick local testing.
+- `src/agents/source_agents/statutes_source_agent.py`: Local-corpus statutes source stub.
+- `src/agents/source_agents/dockets_source_agent.py`: Local-corpus dockets source stub.
+- `src/agents/source_agents/source_router.py`: Source router for `courtlistener`, `statutes`, and `dockets`.
+- `src/agents/source_agents/run_source_agent.py`: Generic source CLI runner.
+- `data/sources/statutes_corpus.json`: Starter statutes/guidance corpus.
+- `data/sources/dockets_corpus.json`: Starter dockets corpus.
+
+### Environment Variable
+
+Set your API token before running:
+
+```bash
+export COURTLISTENER_API_TOKEN="<your_token_here>"
+```
+
+### Quick Local Test
+
+```bash
+python src/agents/source_agents/run_courtlistener_agent.py \
+	--query "Brown v. Board of Education" \
+	--case-title "Education Equality Case" \
+	--round 1 \
+	--side prosecution \
+	--top-k 5
+```
+
+### Generic Multi-Source Tests
+
+```bash
+python src/agents/source_agents/run_source_agent.py \
+	--source statutes \
+	--query "employment minimum wage damages" \
+	--case-title "Employment Contract Dispute" \
+	--round 1 \
+	--side defense \
+	--top-k 3 \
+	--jurisdiction federal
+```
+
+```bash
+python src/agents/source_agents/run_source_agent.py \
+	--source dockets \
+	--query "severance confidentiality settlement" \
+	--case-title "Employment Contract Dispute" \
+	--round 1 \
+	--side prosecution \
+	--top-k 3
+```
+
+```bash
+python src/agents/source_agents/run_source_agent.py \
+	--source courtlistener \
+	--query "employment contract severance confidentiality" \
+	--case-title "Employment Contract Dispute" \
+	--round 1 \
+	--side prosecution \
+	--top-k 3
+```
+
+### How It Fits the Workflow
+
+1. Orchestrator emits one or more `source_agent_input` requests with `source_name` in `courtlistener`, `statutes`, `dockets`.
+2. Each source agent returns normalized evidence snippets using the shared schema.
+3. Source Synthesizer deduplicates and reranks across all retrieved snippets.
+4. Synthesized evidence is then consumed by Prosecution/Defense agents.
+
+## One-Command Round Demo
+
+Run a full single-round pipeline in one command:
+
+```bash
+python src/agents/run_multi_source_round_demo.py \
+	--input data/conversation/orchestrator_input.sample.json \
+	--output data/conversation/round_demo_trace.json
+```
+
+This executes:
+
+1. Orchestrator (builds multi-source fetch plan)
+2. Source Router (runs all sources in fetch plan)
+3. Source Synthesizer (dedupe + rerank + summary)
+
+The complete round trace is saved to:
+
+- `data/conversation/round_demo_trace.json`
+
+## Multi-Round Demo (N Rounds)
+
+Run a full N-round simulation (each round runs prosecution then defense):
+
+```bash
+python src/agents/run_multi_round_demo.py \
+	--input data/conversation/orchestrator_input.sample.json \
+	--rounds 2 \
+	--output data/conversation/multi_round_demo_trace.json \
+	--conversation-output data/conversation/multi_round_conversation.json
+```
+
+Artifacts produced:
+
+- `data/conversation/multi_round_demo_trace.json`: Full round-by-round orchestrator/source/synthesizer trace.
+- `data/conversation/multi_round_conversation.json`: Final append-only conversation history after all turns.
+
+## Evidence Metadata (Optional, Backward-Compatible)
+
+The shared `evidenceSnippet` now supports additional optional metadata fields:
+
+- `source_type`: `case_law | statute | docket | guidance | internal_doc`
+- `jurisdiction`
+- `court_level`
+- `decision_date`
+- `precedential_status`
+- `citation_count`
+- `treatment_signal`: `positive | neutral | negative`
+
+Existing snippets with only `source_name`, `citation`, `snippet`, and `relevance` remain valid.

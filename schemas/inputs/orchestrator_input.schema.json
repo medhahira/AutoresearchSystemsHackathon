@@ -27,6 +27,14 @@
     "allow_new_retrieval": {
       "type": "boolean",
       "default": true
+    },
+    "preferred_sources": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "enum": ["courtlistener", "statutes", "dockets"]
+      },
+      "uniqueItems": true
     }
   }
 }
