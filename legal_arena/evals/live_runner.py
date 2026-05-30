@@ -20,6 +20,7 @@ async def run_live_dummy_cases(
     modal_gpu: str | None = None,
     limit: int | None = None,
     parallel_opening_round: bool = True,
+    raindrop_enabled: bool | None = None,
 ) -> dict[str, Any]:
     os.environ["LEGAL_ARENA_MODEL"] = model
     if not os.getenv("OPENAI_API_KEY") and not os.getenv("OPENAI_ADMIN_KEY"):
@@ -31,6 +32,7 @@ async def run_live_dummy_cases(
                 "modal_gpu": modal_gpu,
                 "case_count_requested": limit or "all",
                 "parallel_opening_round": parallel_opening_round,
+                "raindrop_enabled": raindrop_enabled,
             },
             "seconds": 0,
             "cases": [],
@@ -59,6 +61,7 @@ async def run_live_dummy_cases(
                 documents=dummy_case.documents,
                 modal_config=modal_config,
                 parallel_opening_round=parallel_opening_round,
+                raindrop_enabled=raindrop_enabled,
             )
             reports.append(
                 {
@@ -93,6 +96,7 @@ async def run_live_dummy_cases(
             "modal_gpu": modal_config.gpu,
             "case_count_requested": len(selected_cases),
             "parallel_opening_round": parallel_opening_round,
+            "raindrop_enabled": raindrop_enabled,
         },
         "seconds": round(time.perf_counter() - started_all, 2),
         "cases": reports,
@@ -107,6 +111,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--modal-gpu", help="Optional Modal GPU spec. Legal Arena allows A10 only.")
     parser.add_argument("--limit", type=int, help="Limit number of dummy cases for a smoke run.")
     parser.add_argument("--sequential-opening", action="store_true", help="Make round 1 defense respond to prosecution instead of preparing independently.")
+    parser.add_argument("--raindrop", action="store_true", help="Enable Raindrop Workshop tracing for this run.")
     parser.add_argument("--pretty", action="store_true", help="Pretty-print JSON output.")
     parser.add_argument("--output", type=Path, help="Optional path to write the JSON report.")
     return parser.parse_args()
@@ -122,6 +127,7 @@ def main() -> None:
             modal_gpu=args.modal_gpu,
             limit=args.limit,
             parallel_opening_round=not args.sequential_opening,
+            raindrop_enabled=args.raindrop,
         )
     )
     output = json.dumps(report, indent=2 if args.pretty else None)

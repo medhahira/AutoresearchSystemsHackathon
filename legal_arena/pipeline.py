@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import time
 
 from legal_arena.agents.debater import make_debater
 from legal_arena.agents.final_assessor import run_final_assessor
@@ -10,6 +11,7 @@ from legal_arena.agents.source_synthesizer import synthesize_sources
 from legal_arena.llm import json_for_prompt, structured_completion
 from legal_arena.modal_runtime import ModalRuntimeConfig, create_modal_sandbox_client, create_modal_sandbox_options, create_sandbox_run_config, modal_extension_available
 from legal_arena.schemas import CaseSchema, ConversationEntry, DebateArgument, FinalAssessment, Side, SourceFetchRequest, SourceResult, SynthesizedSources, TurnJudgment
+from legal_arena.tracing import RaindropTracer
 
 
 DEFAULT_N_ROUNDS = 2
@@ -79,6 +81,7 @@ async def run_debate(
     modal_config: ModalRuntimeConfig | None = None,
     enable_early_convergence: bool = True,
     parallel_opening_round: bool = True,
+    raindrop_enabled: bool | None = None,
 ) -> FinalAssessment:
     if n_rounds < 1:
         raise ValueError("n_rounds must be at least 1.")
@@ -86,14 +89,43 @@ async def run_debate(
         raise ValueError(f"n_rounds cannot exceed {MAX_N_ROUNDS}.")
 
     documents = documents or []
+    tracer = RaindropTracer.start(
+        enabled=raindrop_enabled,
+        event="legal_arena_debate",
+        input_payload=case,
+        properties={
+            "n_rounds": n_rounds,
+            "optimise_for": case.optimise_for,
+            "parallel_opening_round": parallel_opening_round,
+            "modal_enabled": bool(modal_config.enabled) if modal_config else False,
+        },
+    )
     source_pool = SubAgentPool(documents, modal_config=modal_config)
     conversation: list[ConversationEntry] = [
         ConversationEntry(role="case", round_number=0, content=case.model_dump_json())
     ]
 
     async def fetch_sources(queries: list[SourceFetchRequest], question: str) -> SynthesizedSources:
-        source_results = await source_pool.run(queries)
-        return await synthesize_sources(source_results, question)
+        started = time.perf_counter()
+        try:
+            source_results = await source_pool.run(queries)
+            synthesized = await synthesize_sources(source_results, question)
+            tracer.track_tool(
+                name="fetch_sources",
+                started=started,
+                input_payload={"question": question, "queries": [query.model_dump(mode="json") for query in queries]},
+                output_payload=synthesized,
+                properties={"source_result_count": len(source_results)},
+            )
+            return synthesized
+        except Exception as exc:
+            tracer.track_tool(
+                name="fetch_sources",
+                started=started,
+                input_payload={"question": question, "queries": [query.model_dump(mode="json") for query in queries]},
+                error=exc,
+            )
+            raise
 
     prosecution = make_debater("prosecution", case, fetch_sources)
     defense = make_debater("defense", case, fetch_sources)
@@ -103,9 +135,19 @@ async def run_debate(
 
     for round_num in range(1, n_rounds + 1):
         if round_num == 1 and parallel_opening_round:
+            started = time.perf_counter()
             final_prosecution_argument, final_defense_argument = await asyncio.gather(
                 prosecution.run(conversation=list(conversation), round_number=round_num),
                 defense.run(conversation=list(conversation), round_number=round_num),
+            )
+            tracer.track_tool(
+                name="parallel_opening_arguments",
+                started=started,
+                input_payload={"round_number": round_num},
+                output_payload={
+                    "prosecution": final_prosecution_argument.model_dump(mode="json"),
+                    "defense": final_defense_argument.model_dump(mode="json"),
+                },
             )
             conversation.extend(
                 [
@@ -125,6 +167,15 @@ async def run_debate(
                 run_turn_judge(case=case, conversation=conversation, argument=final_prosecution_argument),
                 run_turn_judge(case=case, conversation=conversation, argument=final_defense_argument),
             )
+            tracer.track_tool(
+                name="parallel_opening_judgments",
+                started=started,
+                input_payload={"round_number": round_num},
+                output_payload={
+                    "prosecution_score": prosecution_judgment.total_score,
+                    "defense_score": defense_judgment.total_score,
+                },
+            )
             latest_judgments["prosecution"] = prosecution_judgment
             latest_judgments["defense"] = defense_judgment
             conversation.extend(
@@ -142,7 +193,14 @@ async def run_debate(
                 ]
             )
         else:
+            started = time.perf_counter()
             final_prosecution_argument = await prosecution.run(conversation=conversation, round_number=round_num)
+            tracer.track_tool(
+                name="prosecution_turn",
+                started=started,
+                input_payload={"round_number": round_num},
+                output_payload=final_prosecution_argument,
+            )
             conversation.append(
                 ConversationEntry(
                     role="prosecution",
@@ -150,7 +208,14 @@ async def run_debate(
                     content=summarise_argument(final_prosecution_argument),
                 )
             )
+            started = time.perf_counter()
             prosecution_judgment = await run_turn_judge(case=case, conversation=conversation, argument=final_prosecution_argument)
+            tracer.track_tool(
+                name="judge_prosecution_turn",
+                started=started,
+                input_payload=final_prosecution_argument,
+                output_payload=prosecution_judgment,
+            )
             latest_judgments["prosecution"] = prosecution_judgment
             conversation.append(
                 ConversationEntry(
@@ -160,7 +225,14 @@ async def run_debate(
                 )
             )
 
+            started = time.perf_counter()
             final_defense_argument = await defense.run(conversation=conversation, round_number=round_num)
+            tracer.track_tool(
+                name="defense_turn",
+                started=started,
+                input_payload={"round_number": round_num},
+                output_payload=final_defense_argument,
+            )
             conversation.append(
                 ConversationEntry(
                     role="defense",
@@ -168,7 +240,14 @@ async def run_debate(
                     content=summarise_argument(final_defense_argument),
                 )
             )
+            started = time.perf_counter()
             defense_judgment = await run_turn_judge(case=case, conversation=conversation, argument=final_defense_argument)
+            tracer.track_tool(
+                name="judge_defense_turn",
+                started=started,
+                input_payload=final_defense_argument,
+                output_payload=defense_judgment,
+            )
             latest_judgments["defense"] = defense_judgment
             conversation.append(
                 ConversationEntry(
@@ -185,12 +264,32 @@ async def run_debate(
         ):
             break
         if round_num < n_rounds:
+            started = time.perf_counter()
             conversation = await condense_conversation(conversation)
+            tracer.track_tool(
+                name="condense_conversation",
+                started=started,
+                input_payload={"round_number": round_num},
+                output_payload={"conversation_entries": len(conversation)},
+            )
 
     if final_prosecution_argument is None or final_defense_argument is None:
         raise ValueError("At least one debate round is required.")
 
-    return await run_final_assessor(case, conversation, final_prosecution_argument, final_defense_argument)
+    started = time.perf_counter()
+    assessment = await run_final_assessor(case, conversation, final_prosecution_argument, final_defense_argument)
+    tracer.track_tool(
+        name="final_assessment",
+        started=started,
+        input_payload={"conversation_entries": len(conversation)},
+        output_payload=assessment,
+    )
+    tracer.finish(
+        output_payload=assessment,
+        properties={"completed_rounds": final_defense_argument.round_number},
+    )
+    tracer.shutdown()
+    return assessment
 
 
 def summarise_argument(argument: DebateArgument) -> str:

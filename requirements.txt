@@ -3,3 +3,4 @@ openai-agents[modal]>=0.0.7
 pydantic>=2.7.0
 pdfplumber>=0.11.0
 modal>=0.63.0
+raindrop-ai>=0.1.0

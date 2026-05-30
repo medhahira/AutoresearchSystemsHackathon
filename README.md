@@ -153,6 +153,51 @@ Add `--output data/evals/live_dummy_gpt54mini.json` to save the live report.
 
 Add `--modal-gpu A10` only for the optional GPU demo path.
 
+## Raindrop Workshop Tracing
+
+Raindrop Workshop can stream local traces for debugging agent behavior.
+
+```bash
+curl -fsSL https://raindrop.sh/install | bash
+raindrop workshop setup
+```
+
+If `raindrop` is not found after installation, add its install directory to your
+shell path:
+
+```bash
+export PATH="$HOME/.raindrop/bin:$PATH"
+raindrop workshop setup
+```
+
+To make that persistent for new terminals:
+
+```bash
+echo 'export PATH="$HOME/.raindrop/bin:$PATH"' >> ~/.zshrc
+```
+
+You can also run it directly without changing `PATH`:
+
+```bash
+$HOME/.raindrop/bin/raindrop workshop setup
+```
+
+Then run Legal Arena with tracing enabled:
+
+```bash
+python -m legal_arena.evals.live_runner \
+	--model gpt-5.4-mini \
+	--rounds 2 \
+	--limit 1 \
+	--raindrop \
+	--pretty \
+	--output data/evals/live_dummy_gpt54mini.json
+```
+
+The tracing layer records source fetches, debate turns, judge scoring,
+conversation condensation, and final assessment. OpenAI SDK calls are also
+auto-instrumented when Raindrop tracing is active.
+
 ### Minimal Execution Graph
 
 ```text
