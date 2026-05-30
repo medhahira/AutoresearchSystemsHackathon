@@ -9,6 +9,14 @@ pip install modal
 python3 -m modal setup
 ```
 
+## Runtime Budget Policy
+
+- Run legal reasoning through the OpenAI API.
+- Use a mini model for iteration and reserve the strongest model for final showcase runs.
+- Use Modal primarily for orchestration and sandbox isolation.
+- GPU demo mode is limited to A10 only.
+- Do not use H100 or H100:8 for this project.
+
 ## Modal Checker
 
 Run the following command to verify Modal is set up correctly:
@@ -54,6 +62,8 @@ Run a multi-agent legal debate workflow that optimizes for one selected side (`d
 4. **Source Synthesizer Agent**
 	- Input: all retrieved source outputs + current conversation state.
 	- Output: condensed, relevant evidence package for the current turn.
+	- Highlights strong evidence and arguments for the optimized side, weak points
+	  in the opposing side, and weak points the optimized side must repair.
 
 5. **Prosecution Agent**
 	- Uses case context + synthesized evidence to produce argument for prosecution.
@@ -61,7 +71,12 @@ Run a multi-agent legal debate workflow that optimizes for one selected side (`d
 6. **Defense Agent**
 	- Uses case context + synthesized evidence to produce argument for defense.
 
-7. **Final Strategy Agent**
+7. **Judge Agent**
+	- Scores every prosecution and defense turn out of 100.
+	- Uses a fixed rubric: argument validity, evidence groundedness,
+	  counter-attack/defense, legal specificity, and strategic strength.
+
+8. **Final Strategy Agent**
 	- Optimizes final recommendation for `optimize_for` side from Case Builder output.
 	- Produces risk assessment and settlement recommendation.
 
@@ -75,6 +90,18 @@ Maintain a single append-only `conversation` object:
 
 ### Round Protocol (N rounds)
 
+Default `N` is 2 rounds. The configured hard maximum is 10 rounds.
+After each prosecution or defense turn, the Judge Agent scores the turn out of
+100 using the fixed rubric above. Early convergence is checked only after round 2
+and stops the debate when the optimized side scores at least 85/100 and leads the
+other side by at least 15 points.
+
+Round 1 uses independent async openings by default: prosecution and defense both
+prepare from the case record at the same time, and the judge scores both opening
+turns after they are appended. Later rounds are sequential so defense can respond
+to prosecution's latest attack. Use `--sequential-opening` to make round 1 follow
+the same prosecution-then-defense progression.
+
 For each round `r` in `1..N`:
 
 1. **Prosecution turn**
@@ -82,6 +109,7 @@ For each round `r` in `1..N`:
 	- Source Agents retrieve evidence.
 	- Source Synthesizer condenses evidence.
 	- Prosecution Agent generates argument.
+	- Judge Agent scores the prosecution turn.
 	- Append result to `conversation`.
 
 2. **Defense turn**
@@ -89,6 +117,7 @@ For each round `r` in `1..N`:
 	- Source Agents retrieve evidence.
 	- Source Synthesizer condenses evidence.
 	- Defense Agent generates argument.
+	- Judge Agent scores the defense turn.
 	- Append result to `conversation`.
 
 ### End Condition and Final Output
@@ -99,6 +128,30 @@ After `N` rounds, run Final Strategy Agent on full conversation and return:
 2. Risk assessment (strengths, weaknesses, uncertainty).
 3. Settlement guidance (whether to settle outside court and why).
 4. Suggested next actions and evidence gaps.
+
+## Offline Dummy Evaluation
+
+The repository includes five synthetic cases with mocked source packets. This
+benchmark does not call OpenAI or Modal; it validates schema fit, source coverage,
+theme coverage, citation coverage, risk-band sanity, and early-convergence behavior.
+Its dummy early-stop check uses the same judge-score threshold as the live pipeline.
+
+```bash
+python -m legal_arena.evals.evaluator --pretty
+```
+
+Add `--output data/evals/offline_dummy.json` to save the report.
+
+To run the same dummy cases through the live OpenAI/Modal pipeline:
+
+```bash
+export OPENAI_API_KEY="sk-..."
+python -m legal_arena.evals.live_runner --model gpt-5.4-mini --rounds 2 --pretty
+```
+
+Add `--output data/evals/live_dummy_gpt54mini.json` to save the live report.
+
+Add `--modal-gpu A10` only for the optional GPU demo path.
 
 ### Minimal Execution Graph
 

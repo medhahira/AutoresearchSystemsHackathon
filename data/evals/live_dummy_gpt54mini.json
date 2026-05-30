@@ -1,0 +1,37 @@
+{
+  "config": {
+    "model": "gpt-5.4-mini",
+    "n_rounds": 2,
+    "use_modal": true,
+    "modal_gpu": null,
+    "case_count_requested": 1
+  },
+  "seconds": 131.96,
+  "cases": [
+    {
+      "case_id": "tenant-lockout-ca",
+      "title": "Tenant Lockout After Repair Dispute",
+      "status": "ok",
+      "seconds": 131.96,
+      "risk_score": 3,
+      "recommendation": "negotiate",
+      "strongest_arguments": [
+        "California strongly disfavors landlord self-help eviction; changing the locks without judicial process is unlawful if the tenant still had a possessory interest, and the record shows no surrender, no key return, and no unlawful detainer process.",
+        "The tenant documented mold and heat outages in writing with photos, and the landlord replied that repairs would wait until next month; that supports notice, delay, and a credible habitability-based rent withholding defense under Green, Knight, and Stoiber.",
+        "The landlord\u2019s own inspection note found furniture, medication, and work equipment still inside when the locks were changed, which powerfully undermines abandonment and is inconsistent with a completed move-out or relinquishment of possession."
+      ],
+      "vulnerabilities": [
+        "The record does not quantify the severity and duration of the mold and heat defects, so the defense still has to prove they were material enough to justify withholding rent.",
+        "There is no direct evidence that the tenant tendered partial rent, paid into escrow, or otherwise mitigated the unpaid-rent narrative, which the prosecution can use against equity and credibility.",
+        "Belongings left in the unit are strong but not dispositive proof of possession; if the landlord produces evidence of keys surrendered, vacancy, or a departure statement, abandonment becomes a live issue."
+      ],
+      "evidence_gaps": [
+        "Exact severity and duration of mold and heat outages.",
+        "Whether any rent tender, escrow, or partial payment was made.",
+        "Whether keys were ever surrendered or any abandonment notice was served.",
+        "Whether an unlawful detainer action had been filed before the lock change.",
+        "The tenant\u2019s precise occupancy timeline immediately before and after the lock change."
+      ]
+    }
+  ]
+}
