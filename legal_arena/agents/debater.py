@@ -70,3 +70,22 @@ Output JSON matching DebateArgument schema."""
 
 def make_debater(side: Side, case: CaseSchema, fetch_sources: FetchSources) -> Debater:
     return Debater(side=side, case=case, fetch_sources=fetch_sources)
+
+
+def build_case_law_bootstrap_query(case: CaseSchema) -> str:
+    jurisdiction = ", ".join(case.relevant_jurisdictions) or "controlling jurisdiction"
+    summary_terms = " ".join(case.summary.split()[:24])
+    prosecution_terms = "; ".join(goal.strip() for goal in case.prosecution_must_prove[:2])
+    defense_terms = "; ".join(goal.strip() for goal in case.defense_must_prove[:2])
+    return " ".join(
+        part
+        for part in [
+            jurisdiction,
+            "case law",
+            case.title.strip(),
+            summary_terms,
+            prosecution_terms,
+            defense_terms,
+        ]
+        if part
+    )[:220]

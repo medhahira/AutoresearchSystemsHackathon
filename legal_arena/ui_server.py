@@ -41,6 +41,7 @@ from legal_arena.structured_workflow import StructuredWorkflowResult, run_struct
 
 HOST = os.getenv("LEGAL_ARENA_UI_HOST", "127.0.0.1")
 PORT = int(os.getenv("LEGAL_ARENA_UI_PORT", "8000"))
+WORKFLOW_TIMEOUT_S = int(os.getenv("LEGAL_ARENA_WORKFLOW_TIMEOUT_S", "900"))
 
 
 @dataclass(slots=True)
@@ -138,7 +139,7 @@ HTML_TEMPLATE = """<!doctype html>
           <div class="row">
             <div>
               <label for="rounds">Rounds</label>
-              <input id="rounds" name="rounds" type="number" min="1" max="10" value="1" />
+              <input id="rounds" name="rounds" type="number" min="1" max="10" value="10" />
             </div>
             <div>
               <label for="use_file_search">Retrieval</label>
@@ -211,7 +212,10 @@ def _format_turn_trace(workflow: StructuredWorkflowResult | None) -> str:
     if workflow is None:
         return ""
 
-    sections: list[str] = []
+    sections: list[str] = [
+        f"Completed rounds: {workflow.completed_rounds}",
+        f"Stopped early: {'yes' if workflow.stopped_early else 'no'}",
+    ]
     if workflow.source_packets:
         sections.append("=== CourtListener / Source Packets ===")
         for packet in workflow.source_packets:
@@ -362,12 +366,20 @@ class LegalArenaUIHandler(BaseHTTPRequestHandler):
                 toolbox_output = ""
 
             workflow = asyncio.run(
-                run_structured_workflow(
-                    problem_statement=prompt or "Review the uploaded legal documents and assess the case.",
-                    documents=documents,
-                    n_rounds=rounds,
-                    modal_config=ModalRuntimeConfig.from_env(),
+                asyncio.wait_for(
+                    run_structured_workflow(
+                        problem_statement=prompt or "Review the uploaded legal documents and assess the case.",
+                        documents=documents,
+                        n_rounds=rounds,
+                        modal_config=ModalRuntimeConfig.from_env(),
+                    ),
+                    timeout=WORKFLOW_TIMEOUT_S,
                 )
+            )
+        except TimeoutError:
+            error = (
+                "Workflow timed out before completion. "
+                f"Try fewer rounds or set LEGAL_ARENA_WORKFLOW_TIMEOUT_S higher (current: {WORKFLOW_TIMEOUT_S}s)."
             )
         except Exception as exc:
             error = f"Workflow failed: {exc}"

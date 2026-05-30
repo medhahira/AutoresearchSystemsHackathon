@@ -5,11 +5,11 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from legal_arena.agents.case_builder import build_case
-from legal_arena.agents.debater import make_debater
+from legal_arena.agents.debater import build_case_law_bootstrap_query, make_debater
 from legal_arena.agents.final_assessor import run_final_assessor
 from legal_arena.agents.judge import run_turn_judge
 from legal_arena.agents.source_synthesizer import synthesize_sources
-from legal_arena.pipeline import SubAgentPool
+from legal_arena.pipeline import SubAgentPool, should_stop_early
 from legal_arena.schemas import (
     CaseSchema,
     ConversationEntry,
@@ -49,6 +49,8 @@ class StructuredWorkflowResult:
     turn_traces: list[TurnTrace] = field(default_factory=list)
     final_assessment: FinalAssessment | None = None
     conversation: list[ConversationEntry] = field(default_factory=list)
+    completed_rounds: int = 0
+    stopped_early: bool = False
 
 
 async def run_structured_workflow(
@@ -63,6 +65,12 @@ async def run_structured_workflow(
     case = await build_case(problem_statement, documents, optimise_for=optimise_for)
     document_texts = [document.content if hasattr(document, "content") else str(document) for document in documents]
     source_pool = SubAgentPool(document_texts, modal_config=modal_config)
+    bootstrap_case_law_request = SourceFetchRequest(
+        source_type="case_law",
+        query=build_case_law_bootstrap_query(case),
+        context="Global precedent retrieval for all workflow rounds.",
+    )
+    bootstrap_case_law_result = (await source_pool.run([bootstrap_case_law_request]))[0]
 
     result = StructuredWorkflowResult(case=case)
     conversation: list[ConversationEntry] = [ConversationEntry(role="case", round_number=0, content=case.model_dump_json())]
@@ -72,7 +80,14 @@ async def run_structured_workflow(
         packet_box: dict[str, SourcePacketTrace] = {}
 
         async def fetch_sources(queries: list[SourceFetchRequest], question: str) -> SynthesizedSources:
-            source_results = await source_pool.run(queries)
+            non_case_law_queries = [query for query in queries if query.source_type != "case_law"]
+            source_results = await source_pool.run(non_case_law_queries)
+            cached_case_law_results = [
+                bootstrap_case_law_result.model_copy(update={"query": query.query})
+                for query in queries
+                if query.source_type == "case_law"
+            ]
+            source_results = cached_case_law_results + source_results
             synthesized = await synthesize_sources(source_results, question)
             packet = SourcePacketTrace(
                 side=side,
@@ -93,6 +108,7 @@ async def run_structured_workflow(
 
     final_prosecution_argument: DebateArgument | None = None
     final_defense_argument: DebateArgument | None = None
+    latest_judgments: dict[str, TurnJudgment] = {}
 
     for round_number in range(1, n_rounds + 1):
         if round_number == 1 and parallel_opening_round:
@@ -132,6 +148,8 @@ async def run_structured_workflow(
                     ),
                 ]
             )
+            latest_judgments["prosecution"] = prosecution_judgment
+            latest_judgments["defense"] = defense_judgment
             conversation.extend(
                 [
                     ConversationEntry(role="judge", round_number=round_number, content=prosecution_judgment.model_dump_json()),
@@ -150,6 +168,7 @@ async def run_structured_workflow(
                     judgment=prosecution_judgment,
                 )
             )
+            latest_judgments["prosecution"] = prosecution_judgment
             conversation.extend(
                 [
                     ConversationEntry(role="prosecution", round_number=round_number, content=final_prosecution_argument.argument),
@@ -168,12 +187,22 @@ async def run_structured_workflow(
                     judgment=defense_judgment,
                 )
             )
+            latest_judgments["defense"] = defense_judgment
             conversation.extend(
                 [
                     ConversationEntry(role="defense", round_number=round_number, content=final_defense_argument.argument),
                     ConversationEntry(role="judge", round_number=round_number, content=defense_judgment.model_dump_json()),
                 ]
             )
+
+        result.completed_rounds = round_number
+        if should_stop_early(
+            round_num=round_number,
+            optimise_for=case.optimise_for,
+            latest_judgments=latest_judgments,
+        ):
+            result.stopped_early = True
+            break
 
     if final_prosecution_argument is None or final_defense_argument is None:
         raise RuntimeError("Workflow did not produce both final prosecution and defense arguments.")

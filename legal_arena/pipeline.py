@@ -6,7 +6,7 @@ import time
 from collections.abc import Awaitable
 from typing import TypeVar
 
-from legal_arena.agents.debater import make_debater
+from legal_arena.agents.debater import build_case_law_bootstrap_query, make_debater
 from legal_arena.agents.final_assessor import run_final_assessor
 from legal_arena.agents.judge import run_turn_judge
 from legal_arena.agents.source_agent import run_source_agent
@@ -145,6 +145,17 @@ async def run_debate(
         },
     )
     source_pool = SubAgentPool(documents, modal_config=modal_config)
+    bootstrap_case_law_request = SourceFetchRequest(
+        source_type="case_law",
+        query=build_case_law_bootstrap_query(case),
+        context="Global precedent retrieval for all debate rounds.",
+    )
+    bootstrap_case_law_result = (
+        await _await_stage(
+            "bootstrap_case_law",
+            source_pool.run([bootstrap_case_law_request]),
+        )
+    )[0]
     conversation: list[ConversationEntry] = [
         ConversationEntry(role="case", round_number=0, content=case.model_dump_json())
     ]
@@ -152,10 +163,17 @@ async def run_debate(
     async def fetch_sources(queries: list[SourceFetchRequest], question: str) -> SynthesizedSources:
         started = time.perf_counter()
         try:
+            non_case_law_queries = [query for query in queries if query.source_type != "case_law"]
             source_results = await _await_stage(
                 "source_pool.run",
-                source_pool.run(queries),
+                source_pool.run(non_case_law_queries),
             )
+            cached_case_law_results = [
+                bootstrap_case_law_result.model_copy(update={"query": query.query})
+                for query in queries
+                if query.source_type == "case_law"
+            ]
+            source_results = cached_case_law_results + source_results
             synthesized = await _await_stage(
                 "source_synthesizer",
                 synthesize_sources(source_results, question),
