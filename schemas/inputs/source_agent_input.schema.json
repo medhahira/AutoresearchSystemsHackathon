@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://autoresearch.local/schemas/inputs/source_agent_input.schema.json",
+  "title": "Source Agent Input",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["request", "case_title", "round", "side"],
+  "properties": {
+    "request": {
+      "$ref": "../shared/common.schema.json#/$defs/sourceRequest"
+    },
+    "case_title": {
+      "type": "string",
+      "minLength": 3
+    },
+    "round": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "side": {
+      "$ref": "../shared/common.schema.json#/$defs/side"
+    }
+  }
+}

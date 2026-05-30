@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://autoresearch.local/schemas/inputs/case_builder_input.schema.json",
+  "title": "Case Builder Input",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["user_problem", "incident_summary", "documents"],
+  "properties": {
+    "user_problem": {
+      "type": "string",
+      "minLength": 10,
+      "description": "What problem the user is facing."
+    },
+    "incident_summary": {
+      "type": "string",
+      "minLength": 10,
+      "description": "What happened, timeline, and context."
+    },
+    "documents": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "../shared/common.schema.json#/$defs/document"
+      }
+    },
+    "jurisdiction": {
+      "type": "string",
+      "description": "Optional legal jurisdiction used to frame arguments."
+    },
+    "constraints": {
+      "type": "array",
+      "items": { "type": "string" }
+    }
+  }
+}

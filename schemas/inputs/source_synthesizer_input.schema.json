@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://autoresearch.local/schemas/inputs/source_synthesizer_input.schema.json",
+  "title": "Source Synthesizer Input",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["case", "conversation", "retrieved_evidence", "round", "side"],
+  "properties": {
+    "case": {
+      "$ref": "../shared/common.schema.json#/$defs/caseBuilderOutput"
+    },
+    "conversation": {
+      "type": "array",
+      "items": {
+        "$ref": "../shared/common.schema.json#/$defs/conversationEntry"
+      }
+    },
+    "retrieved_evidence": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "../shared/common.schema.json#/$defs/evidenceSnippet"
+      }
+    },
+    "round": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "side": {
+      "$ref": "../shared/common.schema.json#/$defs/side"
+    }
+  }
+}

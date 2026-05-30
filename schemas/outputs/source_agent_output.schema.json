@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://autoresearch.local/schemas/outputs/source_agent_output.schema.json",
+  "title": "Source Agent Output",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["source_name", "query", "results"],
+  "properties": {
+    "source_name": { "type": "string", "minLength": 1 },
+    "query": { "type": "string", "minLength": 1 },
+    "results": {
+      "type": "array",
+      "items": { "$ref": "../shared/common.schema.json#/$defs/evidenceSnippet" }
+    },
+    "latency_ms": { "type": "integer", "minimum": 0 },
+    "error": {
+      "type": ["string", "null"],
+      "description": "Null when retrieval succeeded."
+    }
+  }
+}

@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://autoresearch.local/schemas/outputs/orchestrator_output.schema.json",
+  "title": "Orchestrator Output",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["round", "side", "fetch_plan", "instructions"],
+  "properties": {
+    "round": { "type": "integer", "minimum": 1 },
+    "side": { "$ref": "../shared/common.schema.json#/$defs/side" },
+    "fetch_plan": {
+      "type": "array",
+      "items": { "$ref": "../shared/common.schema.json#/$defs/sourceRequest" }
+    },
+    "instructions": { "type": "string", "minLength": 1 },
+    "should_fetch": { "type": "boolean", "default": true }
+  }
+}

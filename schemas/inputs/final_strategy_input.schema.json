@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://autoresearch.local/schemas/inputs/final_strategy_input.schema.json",
+  "title": "Final Strategy Agent Input",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["case", "conversation", "optimize_for", "total_rounds_completed"],
+  "properties": {
+    "case": {
+      "$ref": "../shared/common.schema.json#/$defs/caseBuilderOutput"
+    },
+    "conversation": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "../shared/common.schema.json#/$defs/conversationEntry"
+      }
+    },
+    "optimize_for": {
+      "$ref": "../shared/common.schema.json#/$defs/side"
+    },
+    "total_rounds_completed": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "require_settlement_recommendation": {
+      "type": "boolean",
+      "default": true
+    }
+  }
+}

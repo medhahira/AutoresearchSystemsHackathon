@@ -111,3 +111,61 @@ User Input
   -> Final Strategy Agent
   -> Final Recommendation
 ```
+
+## Scaffolded Directories
+
+```text
+src/
+	agents/
+		case_builder/
+		orchestrator/
+		source_agents/
+		source_synthesizer/
+		prosecution/
+		defense/
+		final_strategy/
+
+schemas/
+	shared/
+		common.schema.json
+	inputs/
+		case_builder_input.schema.json
+		orchestrator_input.schema.json
+		source_agent_input.schema.json
+		source_synthesizer_input.schema.json
+		prosecution_input.schema.json
+		defense_input.schema.json
+		final_strategy_input.schema.json
+	outputs/
+		case_builder_output.schema.json
+		orchestrator_output.schema.json
+		source_agent_output.schema.json
+		source_synthesizer_output.schema.json
+		prosecution_output.schema.json
+		defense_output.schema.json
+		final_strategy_output.schema.json
+
+data/
+	conversation/
+```
+
+## Input Schemas
+
+- `schemas/shared/common.schema.json`: Shared types (`side`, `document`, `conversationEntry`, `sourceRequest`, `evidenceSnippet`, `caseBuilderOutput`).
+- `schemas/inputs/case_builder_input.schema.json`: Raw user context input for Case Builder.
+- `schemas/inputs/orchestrator_input.schema.json`: Case state + conversation + round control input for Orchestrator.
+- `schemas/inputs/source_agent_input.schema.json`: Per-source fetch request input for Source Agents.
+- `schemas/inputs/source_synthesizer_input.schema.json`: Evidence consolidation input for Source Synthesizer.
+- `schemas/inputs/prosecution_input.schema.json`: Argument-generation input for Prosecution.
+- `schemas/inputs/defense_input.schema.json`: Argument-generation input for Defense.
+- `schemas/inputs/final_strategy_input.schema.json`: Full debate-state input for final strategy and risk output.
+
+## Output Schemas
+
+- `schemas/outputs/case_builder_output.schema.json`: Canonical case object from Case Builder.
+- `schemas/outputs/orchestrator_output.schema.json`: Round-side instructions and fetch plan from Orchestrator.
+- `schemas/outputs/source_agent_output.schema.json`: Retrieved evidence payload from each Source Agent.
+- `schemas/outputs/source_synthesizer_output.schema.json`: Condensed evidence package for the active side/turn.
+- `schemas/outputs/prosecution_output.schema.json`: Prosecution argument package (claims, argument, cited evidence, requested outcome).
+- `schemas/outputs/defense_output.schema.json`: Defense argument package (claims, argument, cited evidence, requested outcome).
+- `schemas/outputs/final_strategy_output.schema.json`: Side-optimized final strategy, risk assessment, settlement recommendation, next actions, and evidence gaps.

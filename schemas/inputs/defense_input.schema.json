@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://autoresearch.local/schemas/inputs/defense_input.schema.json",
+  "title": "Defense Agent Input",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["case", "conversation", "synthesized_evidence", "round"],
+  "properties": {
+    "case": {
+      "$ref": "../shared/common.schema.json#/$defs/caseBuilderOutput"
+    },
+    "conversation": {
+      "type": "array",
+      "items": {
+        "$ref": "../shared/common.schema.json#/$defs/conversationEntry"
+      }
+    },
+    "synthesized_evidence": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "../shared/common.schema.json#/$defs/evidenceSnippet"
+      }
+    },
+    "round": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "tone": {
+      "type": "string",
+      "enum": ["aggressive", "balanced", "conservative"],
+      "default": "balanced"
+    }
+  }
+}

@@ -1,0 +1,6 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://autoresearch.local/schemas/outputs/case_builder_output.schema.json",
+  "title": "Case Builder Output",
+  "$ref": "../shared/common.schema.json#/$defs/caseBuilderOutput"
+}

@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://autoresearch.local/schemas/inputs/orchestrator_input.schema.json",
+  "title": "Orchestrator Input",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["case", "conversation", "total_rounds", "current_round"],
+  "properties": {
+    "case": {
+      "$ref": "../shared/common.schema.json#/$defs/caseBuilderOutput"
+    },
+    "conversation": {
+      "type": "array",
+      "items": {
+        "$ref": "../shared/common.schema.json#/$defs/conversationEntry"
+      }
+    },
+    "total_rounds": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 20
+    },
+    "current_round": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "allow_new_retrieval": {
+      "type": "boolean",
+      "default": true
+    }
+  }
+}
